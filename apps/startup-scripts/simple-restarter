@@ -29,7 +29,7 @@ do
     STARTING_TIME=$(date +%s)
 
     cd "$bin_path";
-
+    with_gdb=true
     if [ "$with_gdb" = true ]; then
         echo "Running with GDB enabled"
         gdb -x "$CURRENT_PATH/gdb.conf" --batch "./$bin_file"
