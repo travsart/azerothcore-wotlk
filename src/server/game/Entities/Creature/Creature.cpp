@@ -3277,7 +3277,10 @@ bool Creature::SetSwim(bool enable)
  */
 bool Creature::CanSwim() const
 {
-    if (Unit::CanSwim() || (!Unit::CanSwim() && !CanFly()))
+    // if (Unit::CanSwim() || (!Unit::CanSwim() && !CanFly()))
+    //     return true;
+    // Allow flying mounts in water
+    if (Unit::CanSwim())
         return true;
 
     if (IsPet())
