@@ -2147,6 +2147,8 @@ uint32 Spell::GetSearcherTypeMask(SpellTargetObjectTypes objType, ConditionList*
         retMask &= GRID_MAP_TYPE_MASK_CORPSE | GRID_MAP_TYPE_MASK_PLAYER;
     if (m_spellInfo->HasAttribute(SPELL_ATTR3_ONLY_ON_GHOSTS))
         retMask &= GRID_MAP_TYPE_MASK_PLAYER;
+    if (m_spellInfo->HasAttribute(SPELL_ATTR5_NOT_ON_PLAYER))
+        retMask &= ~GRID_MAP_TYPE_MASK_PLAYER;
 
     if (condList)
         retMask &= sConditionMgr->GetSearcherTypeMaskForConditionList(*condList);
@@ -2159,24 +2161,7 @@ void Spell::SearchTargets(SEARCHER& searcher, uint32 containerMask, Unit* refere
     if (!containerMask)
         return;
 
-    // search world and grid for possible targets
-    bool searchInGrid = containerMask & (GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_GAMEOBJECT);
-    bool searchInWorld = containerMask & (GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER | GRID_MAP_TYPE_MASK_CORPSE);
-
-    if (searchInGrid || searchInWorld)
-    {
-        float x, y;
-        x = pos->GetPositionX();
-        y = pos->GetPositionY();
-
-        Map* map = referer->GetMap();
-
-        if (searchInWorld)
-            Cell::VisitWorldObjects(x, y, map, searcher, radius);
-
-        if (searchInGrid)
-            Cell::VisitGridObjects(x, y, map, searcher, radius);
-    }
+    Cell::VisitObjects(pos->GetPositionX(), pos->GetPositionY(), referer->GetMap(), searcher, radius);
 }
 
 WorldObject* Spell::SearchNearbyTarget(float range, SpellTargetObjectTypes objectType, SpellTargetCheckTypes selectionType, ConditionList* condList)
@@ -2236,21 +2221,15 @@ void Spell::SearchChainTargets(std::list<WorldObject*>& targets, uint32 chainTar
     if (isBouncingFar)
         searchRadius *= chainTargets;
 
+    WorldObject* chainSource = m_spellInfo->HasAttribute(SPELL_ATTR2_CHAIN_FROM_CASTER) ? m_caster : target;
     std::list<WorldObject*> tempTargets;
-    SearchAreaTargets(tempTargets, searchRadius, target, m_caster, objectType, selectType, condList);
+    SearchAreaTargets(tempTargets, searchRadius, chainSource, m_caster, objectType, selectType, condList);
     tempTargets.remove(target);
 
     // remove targets which are always invalid for chain spells
     // for some spells allow only chain targets in front of caster (swipe for example)
     if (!isBouncingFar)
-    {
-        for (std::list<WorldObject*>::iterator itr = tempTargets.begin(); itr != tempTargets.end();)
-        {
-            std::list<WorldObject*>::iterator checkItr = itr++;
-            if (!m_caster->HasInArc(static_cast<float>(M_PI), *checkItr))
-                tempTargets.erase(checkItr);
-        }
-    }
+        tempTargets.remove_if([this](WorldObject* target) { return !m_caster->HasInArc(static_cast<float>(M_PI), target); });
 
     while (chainTargets)
     {
@@ -2265,7 +2244,7 @@ void Spell::SearchChainTargets(std::list<WorldObject*>& targets, uint32 chainTar
                 if (Unit* unit = (*itr)->ToUnit())
                 {
                     uint32 deficit = unit->GetMaxHealth() - unit->GetHealth();
-                    if (deficit > maxHPDeficit && target->IsWithinDist(unit, jumpRadius) && target->IsWithinLOSInMap(unit, VMAP::ModelIgnoreFlags::M2))
+                    if (deficit > maxHPDeficit && chainSource->IsWithinDist(unit, jumpRadius) && chainSource->IsWithinLOSInMap(unit, VMAP::ModelIgnoreFlags::M2))
                     {
                         foundItr = itr;
                         maxHPDeficit = deficit;
@@ -2280,19 +2259,22 @@ void Spell::SearchChainTargets(std::list<WorldObject*>& targets, uint32 chainTar
             {
                 if (foundItr == tempTargets.end())
                 {
-                    if ((!isBouncingFar || target->IsWithinDist(*itr, jumpRadius)) && target->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
+                    if ((!isBouncingFar || chainSource->IsWithinDist(*itr, jumpRadius)) && chainSource->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
                         foundItr = itr;
                 }
-                else if (target->GetDistanceOrder(*itr, *foundItr) && target->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
+                else if (chainSource->GetDistanceOrder(*itr, *foundItr) && chainSource->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
                     foundItr = itr;
             }
         }
         // not found any valid target - chain ends
         if (foundItr == tempTargets.end())
             break;
-        target = *foundItr;
+
+        if (!m_spellInfo->HasAttribute(SPELL_ATTR2_CHAIN_FROM_CASTER))
+            chainSource = *foundItr;
+
+        targets.push_back(*foundItr);
         tempTargets.erase(foundItr);
-        targets.push_back(target);
         --chainTargets;
     }
 }
@@ -2808,7 +2790,11 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
         }
 
         int32 gain = caster->HealBySpell(healInfo, crit);
-        unitTarget->getHostileRefMgr().threatAssist(caster, float(gain) * 0.5f, m_spellInfo);
+        float threat = float(gain) * 0.5f;
+        if (caster->IsClass(CLASS_PALADIN))
+            threat *= 0.5f;
+
+        unitTarget->getHostileRefMgr().threatAssist(caster, threat, m_spellInfo);
         m_healing = gain;
 
         // Xinef: if heal acutally healed something, add no overheal flag
@@ -3451,7 +3437,7 @@ bool Spell::UpdateChanneledTargetList()
                                 continue;
                             }
                             // Xinef: Update Orientation server side (non players wont sent appropriate packets)
-                            else if (m_spellInfo->HasAttribute(SPELL_ATTR1_TRACK_TARGET_IN_CHANNEL))
+                            else if (!m_caster->IsPlayer() && m_spellInfo->HasAttribute(SPELL_ATTR1_TRACK_TARGET_IN_CHANNEL))
                                 m_caster->UpdateOrientation(m_caster->GetAngle(unit));
                         }
                     }
@@ -4126,6 +4112,12 @@ void Spell::_cast(bool skipCheck)
     sScriptMgr->OnSpellCast(this, m_caster, m_spellInfo, skipCheck);
 
     SetExecutedCurrently(false);
+
+    // Call CreatureAI hook OnSpellCastFinished
+    if (m_originalCaster)
+        if (Creature* caster = m_originalCaster->ToCreature())
+            if (caster->IsAIEnabled)
+                caster->AI()->OnSpellCastFinished(GetSpellInfo(), SPELL_FINISHED_SUCCESSFUL_CAST);
 }
 
 void Spell::handle_immediate()
@@ -4477,6 +4469,11 @@ void Spell::update(uint32 difftime)
                     SendChannelUpdate(0);
 
                     finish();
+
+                    // We call the hook here instead of in Spell::finish because we only want to call it for completed channeling. Everything else is handled by interrupts
+                    if (Creature* creatureCaster = m_caster->ToCreature())
+                        if (creatureCaster->IsAIEnabled)
+                            creatureCaster->AI()->OnSpellCastFinished(m_spellInfo, SPELL_FINISHED_CHANNELING_COMPLETE);
                 }
                 // Xinef: Dont update channeled target list on last tick, allow auras to update duration properly
                 // Xinef: Added this strange check because of diffrent update routines for players / creatures
@@ -4538,6 +4535,11 @@ void Spell::finish(bool ok)
             // Xinef: Reset cooldown event in case of fail cast
             if (m_spellInfo->IsCooldownStartedOnEvent())
                 m_caster->ToPlayer()->SendCooldownEvent(m_spellInfo, 0, 0, false);
+
+            // Rogue fix: Remove Cold Blood if Mutilate off-hand failed
+            if (m_spellInfo->Id == 27576) // Mutilate, off-hand
+                if (m_caster->HasAura(14177))
+                    m_caster->RemoveAura(14177);
         }
         return;
     }
@@ -5394,7 +5396,7 @@ void Spell::TakePower()
 
 void Spell::TakeAmmo()
 {
-    if (m_attackType == RANGED_ATTACK && m_caster->IsPlayer())
+    if (m_attackType == RANGED_ATTACK && m_caster->IsPlayer() && !m_spellInfo->HasAttribute(SPELL_ATTR6_DO_NOT_CONSUME_RESOURCES))
     {
         Item* pItem = m_caster->ToPlayer()->GetWeaponForAttack(RANGED_ATTACK);
 
@@ -5409,15 +5411,16 @@ void Spell::TakeAmmo()
                 // decrease durability for non-stackable throw weapon
                 m_caster->ToPlayer()->DurabilityPointLossForEquipSlot(EQUIPMENT_SLOT_RANGED);
             }
-            else
+            else if (!sWorld->getBoolConfig(CONFIG_ENABLE_INFINITEAMMO))
             {
                 // decrease items amount for stackable throw weapon
                 uint32 count = 1;
                 m_caster->ToPlayer()->DestroyItemCount(pItem, count, true);
             }
         }
-        else if (uint32 ammo = m_caster->ToPlayer()->GetUInt32Value(PLAYER_AMMO_ID))
-            m_caster->ToPlayer()->DestroyItemCount(ammo, 1, true);
+        else if (!sWorld->getBoolConfig(CONFIG_ENABLE_INFINITEAMMO))
+            if (uint32 ammo = m_caster->ToPlayer()->GetUInt32Value(PLAYER_AMMO_ID))
+                m_caster->ToPlayer()->DestroyItemCount(ammo, 1, true);
     }
 }
 
@@ -7101,7 +7104,7 @@ SpellCastResult Spell::CheckRange(bool strict)
             if (range_type == SPELL_RANGE_MELEE)
             {
                 float real_max_range = max_range;
-                if (!m_caster->IsCreature() && m_caster->isMoving() && target->isMoving() && !m_caster->IsWalking() && !target->IsWalking())
+                if (!m_caster->IsCreature() && m_caster->HasLeewayMovement() && target->HasLeewayMovement())
                     real_max_range -= MIN_MELEE_REACH; // Because of lag, we can not check too strictly here (is only used if both caster and target are moving)
                 else
                     real_max_range -= 2 * MIN_MELEE_REACH;
@@ -7118,7 +7121,7 @@ SpellCastResult Spell::CheckRange(bool strict)
                     return SPELL_FAILED_TOO_CLOSE;
             }
 
-            if (m_caster->IsPlayer() && (m_spellInfo->FacingCasterFlags & SPELL_FACING_FLAG_INFRONT) && !m_caster->HasInArc(static_cast<float>(M_PI), target))
+            if (m_caster->IsPlayer() && (m_spellInfo->FacingCasterFlags & SPELL_FACING_FLAG_INFRONT) && !m_caster->HasInArc(static_cast<float>(M_PI), target) && !m_caster->IsWithinBoundaryRadius(target))
                 return SPELL_FAILED_UNIT_NOT_INFRONT;
         }
 
@@ -9029,6 +9032,8 @@ namespace Acore
                 case TARGET_CHECK_PARTY:
                     if (unitTarget->IsTotem())
                         return false;
+                    if (unitTarget->IsGuardian() && !unitTarget->IsControllableGuardian())
+                        return false;
                     if (!_caster->_IsValidAssistTarget(unitTarget, _spellInfo))
                         return false;
                     if (!_referer->IsInPartyWith(unitTarget))
@@ -9040,6 +9045,8 @@ namespace Acore
                     [[fallthrough]];
                 case TARGET_CHECK_RAID:
                     if (unitTarget->IsTotem())
+                        return false;
+                    if (unitTarget->IsGuardian() && !unitTarget->IsControllableGuardian())
                         return false;
                     if (!_caster->_IsValidAssistTarget(unitTarget, _spellInfo))
                         return false;
@@ -9117,7 +9124,7 @@ namespace Acore
         }
         else
         {
-            if (!_caster->isInFront(target, _coneAngle))
+            if (!_caster->IsWithinBoundaryRadius(target->ToUnit()) && !_caster->isInFront(target, _coneAngle))
                 return false;
         }
         return WorldObjectSpellAreaTargetCheck::operator ()(target);

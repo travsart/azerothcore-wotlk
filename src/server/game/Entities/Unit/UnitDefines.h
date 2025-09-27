@@ -161,7 +161,7 @@ enum UnitTypeMask
     UNIT_MASK_VEHICLE                   = 0x00000020,
     UNIT_MASK_PUPPET                    = 0x00000040,
     UNIT_MASK_HUNTER_PET                = 0x00000080,
-    UNIT_MASK_CONTROLABLE_GUARDIAN      = 0x00000100,
+    UNIT_MASK_CONTROLLABLE_GUARDIAN     = 0x00000100,
     UNIT_MASK_ACCESSORY                 = 0x00000200
 };
 
@@ -196,6 +196,8 @@ enum UnitState
     UNIT_STATE_FOLLOW_MOVE              = 0x08000000,
     UNIT_STATE_IGNORE_PATHFINDING       = 0x10000000,       // do not use pathfinding in any MovementGenerator
     UNIT_STATE_NO_ENVIRONMENT_UPD       = 0x20000000,
+
+    UNIT_STATE_NO_COMBAT_MOVEMENT, // serverside only - should never be changed outside of core and hence shouldnt have a defined static value and be at the end
 
     UNIT_STATE_ALL_STATE_SUPPORTED = UNIT_STATE_DIED | UNIT_STATE_MELEE_ATTACKING | UNIT_STATE_STUNNED | UNIT_STATE_ROAMING | UNIT_STATE_CHASE
     | UNIT_STATE_FLEEING | UNIT_STATE_IN_FLIGHT | UNIT_STATE_FOLLOW | UNIT_STATE_ROOT | UNIT_STATE_CONFUSED

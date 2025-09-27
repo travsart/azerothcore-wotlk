@@ -39,10 +39,10 @@ class CreatureGroup;
 
 #define MAX_VENDOR_ITEMS 150    // Limitation in 3.x.x item count in SMSG_LIST_INVENTORY
 
-class Creature : public Unit, public GridObject<Creature>, public MovableMapObject
+class Creature : public Unit, public GridObject<Creature>, public MovableMapObject, public UpdatableMapObject
 {
 public:
-    explicit Creature(bool isWorldObject = false);
+    explicit Creature();
     ~Creature() override;
 
     void AddToWorld() override;
@@ -268,6 +268,7 @@ public:
     void DoFleeToGetAssistance();
     void CallForHelp(float fRadius, Unit* target = nullptr);
     void CallAssistance(Unit* target = nullptr);
+    void SetNoCallForHelp(bool val) { m_alreadyCallForHelp = val; }
     void SetNoCallAssistance(bool val) { m_AlreadyCallAssistance = val; }
     void SetNoSearchAssistance(bool val) { m_AlreadySearchedAssistance = val; }
     bool HasSearchedAssistance() { return m_AlreadySearchedAssistance; }
@@ -376,8 +377,6 @@ public:
 
     float m_SightDistance, m_CombatDistance;
 
-    bool m_isTempWorldObject; //true when possessed
-
     // Handling caster facing during spellcast
     void SetTarget(ObjectGuid guid = ObjectGuid::Empty) override;
     void ClearTarget() { SetTarget(); };
@@ -391,12 +390,15 @@ public:
     void ClearLastLeashExtensionTimePtr();
     time_t GetLastLeashExtensionTime() const;
     void UpdateLeashExtensionTime();
+    uint8 GetLeashTimer() const;
 
     bool IsFreeToMove();
     static constexpr uint32 MOVE_CIRCLE_CHECK_INTERVAL = 3000;
     static constexpr uint32 MOVE_BACKWARDS_CHECK_INTERVAL = 2000;
+    static constexpr uint32 EXTEND_LEASH_CHECK_INTERVAL = 3000;
     uint32 m_moveCircleMovementTime = MOVE_CIRCLE_CHECK_INTERVAL;
     uint32 m_moveBackwardsMovementTime = MOVE_BACKWARDS_CHECK_INTERVAL;
+    uint32 m_extendLeashTime = EXTEND_LEASH_CHECK_INTERVAL;
 
     [[nodiscard]] bool HasSwimmingFlagOutOfCombat() const
     {
@@ -433,6 +435,8 @@ public:
 
     std::string GetDebugInfo() const override;
 
+    bool IsUpdateNeeded() override;
+
 protected:
     bool CreateFromProto(ObjectGuid::LowType guidlow, uint32 Entry, uint32 vehId, const CreatureData* data = nullptr);
     bool InitEntry(uint32 entry, const CreatureData* data = nullptr);
@@ -466,6 +470,7 @@ protected:
     uint8 m_equipmentId;
     int8 m_originalEquipmentId; // can be -1
 
+    bool m_alreadyCallForHelp;
     bool m_AlreadyCallAssistance;
     bool m_AlreadySearchedAssistance;
     bool m_regenHealth;

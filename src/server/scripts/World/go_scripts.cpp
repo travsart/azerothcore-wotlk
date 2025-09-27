@@ -28,8 +28,6 @@
 #include "ScriptedGossip.h"
 #include "Spell.h"
 
-// Ours
-
 class go_seer_of_zebhalak : public GameObjectScript
 {
 public:
@@ -82,7 +80,7 @@ public:
                 if (_timer > 5000)
                 {
                     me->CastSpell(nullptr, 9056);
-                    me->DestroyForNearbyPlayers();
+                    me->DestroyForVisiblePlayers();
                     _timer = 0;
                 }
             }
@@ -324,7 +322,7 @@ public:
                 std::list<Player*> players;
                 Acore::AnyPlayerExactPositionInGameObjectRangeCheck checker(me, 0.3f);
                 Acore::PlayerListSearcher<Acore::AnyPlayerExactPositionInGameObjectRangeCheck> searcher(me, players, checker);
-                Cell::VisitWorldObjects(me, searcher, 0.3f);
+                Cell::VisitObjects(me, searcher, 0.3f);
 
                 if (players.size() > 0)
                 {
@@ -371,7 +369,7 @@ public:
                 std::list<Player*> players;
                 Acore::AnyPlayerExactPositionInGameObjectRangeCheck checker(me, 0.3f);
                 Acore::PlayerListSearcher<Acore::AnyPlayerExactPositionInGameObjectRangeCheck> searcher(me, players, checker);
-                Cell::VisitWorldObjects(me, searcher, 0.3f);
+                Cell::VisitObjects(me, searcher, 0.3f);
 
                 if (players.size() > 0)
                 {
@@ -458,7 +456,8 @@ public:
 ####*/
 enum L70ETCMusic
 {
-    MUSIC_L70_ETC_MUSIC = 11803
+    MUSIC_L70_ETC_MUSIC      = 11803,
+    MUSIC_L70_ETC_MUSIC_LOUD = 12868
 };
 
 enum L70ETCMusicEvents
@@ -486,7 +485,10 @@ public:
                 switch (eventId)
                 {
                 case EVENT_ETC_START_MUSIC:
-                    me->PlayDirectMusic(MUSIC_L70_ETC_MUSIC);
+                    if (me->GetMapId() == MAP_BLACKROCK_DEPTHS)
+                        me->PlayDirectMusic(MUSIC_L70_ETC_MUSIC_LOUD);
+                    else
+                        me->PlayDirectMusic(MUSIC_L70_ETC_MUSIC);
                     _events.ScheduleEvent(EVENT_ETC_START_MUSIC, 1600);  // Every 1.6 seconds SMSG_PLAY_MUSIC packet (PlayDirectMusic) is pushed to the client (sniffed value)
                     break;
                 default:
@@ -504,7 +506,6 @@ public:
     }
 };
 
-// Theirs
 /*####
 ## go_brewfest_music
 ####*/
@@ -822,7 +823,7 @@ public:
                             std::list<Player*> targets;
                             Acore::AnyPlayerInObjectRangeCheck check(me, me->GetVisibilityRange(), false);
                             Acore::PlayerListSearcherWithSharedVision<Acore::AnyPlayerInObjectRangeCheck> searcher(me, targets, check);
-                            Cell::VisitWorldObjects(me, searcher, me->GetVisibilityRange());
+                            Cell::VisitObjects(me, searcher, me->GetVisibilityRange());
                             for (Player* player : targets)
                             {
                                 if (player->GetTeamId() == TEAM_HORDE)
@@ -1896,7 +1897,6 @@ public:
 
 void AddSC_go_scripts()
 {
-    // Ours
     new go_seer_of_zebhalak();
     new go_mistwhisper_treasure();
     new go_witherbark_totem_bundle();
@@ -1910,8 +1910,6 @@ void AddSC_go_scripts()
     new go_bear_trap();
     new go_duskwither_spire_power_source();
     new go_l70_etc_music();
-
-    // Theirs
     new go_brewfest_music();
     new go_pirate_day_music();
     new go_darkmoon_faire_music();
